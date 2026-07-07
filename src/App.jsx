@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowLeft,
   CheckCircle2,
+  ChevronRight,
   FileText,
   LoaderCircle,
   LogOut,
@@ -219,6 +221,7 @@ function Dashboard({ token, user, setUser, onLogout }) {
   const [loadingWorkers, setLoadingWorkers] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
 
   const stats = useMemo(() => {
     const submitted = workers.filter((worker) => worker.submitted).length;
@@ -283,6 +286,7 @@ function Dashboard({ token, user, setUser, onLogout }) {
     }
     setLoadingDetail(true);
     setIsNew(false);
+    setMobileEditorOpen(true);
 
     try {
       const data = await apiRequest(`/api/workers/${id}`, { token });
@@ -302,6 +306,11 @@ function Dashboard({ token, user, setUser, onLogout }) {
     setActiveWorker(null);
     setForm(emptyForm);
     setIsNew(true);
+    setMobileEditorOpen(true);
+  }
+
+  function closeEditor() {
+    setMobileEditorOpen(false);
   }
 
   function updateField(field, value) {
@@ -344,6 +353,7 @@ function Dashboard({ token, user, setUser, onLogout }) {
       });
       setNotice({ type: "success", text: "Worker file deleted." });
       startNew({ clearNotice: false });
+      setMobileEditorOpen(false);
       await refreshWorkers();
     } catch (error) {
       handleError(error);
@@ -351,17 +361,17 @@ function Dashboard({ token, user, setUser, onLogout }) {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100 text-zinc-900">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-h-dvh bg-neutral-100 text-zinc-900">
+      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <div>
             <p className="text-xs font-medium uppercase text-teal-700">File registry</p>
-            <h1 className="text-2xl font-semibold text-zinc-950">Foreign Worker Files</h1>
+            <h1 className="text-xl font-semibold text-zinc-950 sm:text-2xl">Foreign Worker Files</h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="min-w-0 text-right text-sm">
-              <p className="truncate font-medium text-zinc-900">{user?.name || "Administrator"}</p>
-              <p className="truncate text-zinc-500">{user?.email || ""}</p>
+            <div className="hidden min-w-0 text-right text-sm sm:block">
+              {/* <p className="truncate font-medium text-zinc-900">{user?.name || "Administrator"}</p>
+              <p className="truncate text-zinc-500">{user?.email || ""}</p> */}
             </div>
             <button className="icon-button" type="button" title="Sign out" aria-label="Sign out" onClick={onLogout}>
               <LogOut className="h-4 w-4" aria-hidden="true" />
@@ -370,10 +380,10 @@ function Dashboard({ token, user, setUser, onLogout }) {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_440px]">
+      <main className="mx-auto grid max-w-7xl gap-5 px-3 pb-24 pt-4 sm:px-4 lg:grid-cols-[minmax(0,1fr)_440px] lg:pb-5 lg:pt-5">
         <section className="min-w-0">
           <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-3 gap-2">
               <Stat label="Files" value={stats.total} />
               <Stat label="Submitted" value={stats.submitted} />
               <Stat label="Pending" value={stats.pending} />
@@ -383,18 +393,24 @@ function Dashboard({ token, user, setUser, onLogout }) {
                 <span className="sr-only">Search files</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
                 <input
-                  className="h-9 w-full rounded-md border border-zinc-300 bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15"
+                  className="h-11 w-full rounded-md border border-zinc-300 bg-white py-2 pl-9 pr-3 text-base outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 sm:h-9 sm:text-sm"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search files"
                 />
               </label>
-              <button className="primary-button" type="button" onClick={startNew}>
+              <button className="primary-button hidden sm:inline-flex" type="button" onClick={startNew}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 New file
               </button>
             </div>
           </div>
+
+          {notice && !mobileEditorOpen ? (
+            <div className="lg:hidden">
+              <Notice notice={notice} />
+            </div>
+          ) : null}
 
           <WorkerList
             workers={workers}
@@ -404,13 +420,40 @@ function Dashboard({ token, user, setUser, onLogout }) {
           />
         </section>
 
-        <aside className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
-          <form onSubmit={saveWorker} className="border-b border-zinc-200 p-4">
+        <button
+          className="fixed bottom-5 right-5 z-20 inline-flex h-14 w-14 items-center justify-center rounded-full bg-teal-700 text-white shadow-lg shadow-teal-900/25 transition hover:bg-teal-800 sm:hidden"
+          type="button"
+          title="New file"
+          aria-label="New file"
+          onClick={startNew}
+        >
+          <Plus className="h-6 w-6" aria-hidden="true" />
+        </button>
+
+        <aside
+          className={`min-w-0 bg-neutral-100 ${
+            mobileEditorOpen ? "fixed inset-0 z-40 block overflow-y-auto" : "hidden"
+          } lg:static lg:z-auto lg:block lg:overflow-visible lg:rounded-lg lg:border lg:border-zinc-200 lg:bg-white lg:shadow-sm`}
+        >
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white px-3 py-3 lg:hidden">
+            <button className="icon-button" type="button" title="Back" aria-label="Back" onClick={closeEditor}>
+              <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <div className="min-w-0 px-3 text-center">
+              <p className="truncate text-sm font-semibold text-zinc-950">
+                {isNew ? "New file" : form.worker_name || `File ${activeWorker?.file_no || ""}`}
+              </p>
+              <p className="text-xs text-zinc-500">{isNew ? "Auto from 2000" : `File ${activeWorker?.file_no || ""}`}</p>
+            </div>
+            <div className="h-11 w-11" aria-hidden="true" />
+          </div>
+
+          <form onSubmit={saveWorker} className="min-h-dvh bg-white p-4 lg:min-h-0 lg:border-b lg:border-zinc-200">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase text-zinc-500">File no</p>
                 <h2 className="text-xl font-semibold text-zinc-950">
-                  {isNew ? "2000" : activeWorker?.file_no}
+                  {isNew ? "Auto from 2000" : activeWorker?.file_no}
                 </h2>
               </div>
               {loadingDetail ? (
@@ -516,7 +559,7 @@ function Dashboard({ token, user, setUser, onLogout }) {
               </label>
             </div>
 
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <div className="sticky bottom-0 -mx-4 mt-4 flex flex-col gap-2 border-t border-zinc-200 bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:flex-row sm:justify-between lg:static lg:mx-0 lg:border-t-0 lg:px-0 lg:pb-0">
               <button className="primary-button" type="submit" disabled={saving}>
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
                 Save
@@ -579,7 +622,7 @@ function WorkerList({ workers, activeWorker, loading, onOpen }) {
 
   return (
     <>
-      <div className="hidden overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm md:block">
+      <div className="hidden overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm lg:block">
         <table className="min-w-full divide-y divide-zinc-200 text-sm">
           <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase text-zinc-500">
             <tr>
@@ -625,11 +668,11 @@ function WorkerList({ workers, activeWorker, loading, onOpen }) {
         </table>
       </div>
 
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-3 lg:hidden">
         {workers.map((worker) => (
           <button
             key={worker.id}
-            className={`w-full rounded-lg border p-4 text-left shadow-sm transition ${
+            className={`w-full rounded-lg border p-4 text-left shadow-sm transition active:scale-[0.99] ${
               activeWorker?.id === worker.id ? "border-teal-300 bg-teal-50" : "border-zinc-200 bg-white"
             }`}
             type="button"
@@ -638,12 +681,15 @@ function WorkerList({ workers, activeWorker, loading, onOpen }) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-medium uppercase text-zinc-500">File {worker.file_no}</p>
-                <p className="truncate font-semibold text-zinc-950">{worker.worker_name || "-"}</p>
+                <p className="truncate text-lg font-semibold text-zinc-950">{worker.worker_name || "-"}</p>
                 <p className="truncate text-sm text-zinc-600">{worker.company}</p>
               </div>
-              <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium ${statusClasses(worker)}`}>
-                {worker.submitted ? "Submitted" : "Open"}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`rounded-md border px-2 py-1 text-xs font-medium ${statusClasses(worker)}`}>
+                  {worker.submitted ? "Submitted" : "Open"}
+                </span>
+                <ChevronRight className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+              </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-zinc-600">
               <p className="truncate">Agent: {worker.agent || "-"}</p>
