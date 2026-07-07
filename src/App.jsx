@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
-  Download,
   FileText,
   LoaderCircle,
   LogOut,
-  Paperclip,
   Plus,
   Save,
   Search,
   Trash2,
-  Upload,
   XCircle
 } from "lucide-react";
 
@@ -83,27 +80,6 @@ function workerToForm(worker) {
     lmia_number: worker.lmia_number || "",
     note: worker.note || ""
   };
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
-}
-
-function formatBytes(size) {
-  if (!size) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB"];
-  const exponent = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
-  const value = size / 1024 ** exponent;
-  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 }
 
 function statusClasses(worker) {
@@ -186,7 +162,7 @@ function Login({ onLogin }) {
               <FileText className="h-6 w-6" aria-hidden="true" />
             </div>
             <h1 className="text-2xl font-semibold text-zinc-950">Foreign Worker Files</h1>
-            <p className="mt-2 text-sm text-zinc-600">Sign in to manage worker records and documents.</p>
+            <p className="mt-2 text-sm text-zinc-600">Sign in to manage worker records.</p>
           </div>
 
           <div className="space-y-4">
@@ -236,7 +212,6 @@ function Login({ onLogin }) {
 function Dashboard({ token, user, setUser, onLogout }) {
   const [workers, setWorkers] = useState([]);
   const [activeWorker, setActiveWorker] = useState(null);
-  const [documents, setDocuments] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [isNew, setIsNew] = useState(true);
   const [search, setSearch] = useState("");
@@ -244,15 +219,11 @@ function Dashboard({ token, user, setUser, onLogout }) {
   const [loadingWorkers, setLoadingWorkers] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const fileInputRef = useRef(null);
 
   const stats = useMemo(() => {
     const submitted = workers.filter((worker) => worker.submitted).length;
     const pending = workers.filter((worker) => !worker.decision || worker.decision === "Pending").length;
-    const documentsCount = workers.reduce((total, worker) => total + Number(worker.document_count || 0), 0);
-    return { total: workers.length, submitted, pending, documentsCount };
+    return { total: workers.length, submitted, pending };
   }, [workers]);
 
   useEffect(() => {
@@ -312,12 +283,10 @@ function Dashboard({ token, user, setUser, onLogout }) {
     }
     setLoadingDetail(true);
     setIsNew(false);
-    setSelectedFiles([]);
 
     try {
       const data = await apiRequest(`/api/workers/${id}`, { token });
       setActiveWorker(data.worker);
-      setDocuments(data.documents);
       setForm(workerToForm(data.worker));
     } catch (error) {
       handleError(error);
@@ -331,13 +300,8 @@ function Dashboard({ token, user, setUser, onLogout }) {
       setNotice(null);
     }
     setActiveWorker(null);
-    setDocuments([]);
-    setSelectedFiles([]);
     setForm(emptyForm);
     setIsNew(true);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
   }
 
   function updateField(field, value) {
@@ -386,77 +350,6 @@ function Dashboard({ token, user, setUser, onLogout }) {
     }
   }
 
-  async function uploadDocuments() {
-    if (!activeWorker || !selectedFiles.length) {
-      return;
-    }
-
-    const payload = new FormData();
-    selectedFiles.forEach((file) => payload.append("documents", file));
-    setUploading(true);
-    setNotice(null);
-
-    try {
-      const data = await apiRequest(`/api/workers/${activeWorker.id}/documents`, {
-        method: "POST",
-        token,
-        body: payload,
-        formData: true
-      });
-      setDocuments(data.documents);
-      setSelectedFiles([]);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      setNotice({ type: "success", text: "Documents uploaded." });
-      await refreshWorkers();
-    } catch (error) {
-      handleError(error);
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function downloadDocument(document) {
-    try {
-      const response = await fetch(`${API_BASE}/api/documents/${document.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        throw new Error("Document download failed.");
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = window.document.createElement("a");
-      link.href = url;
-      link.download = document.original_name;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      handleError(error);
-    }
-  }
-
-  async function deleteDocument(document) {
-    if (!window.confirm(`Delete ${document.original_name}?`)) {
-      return;
-    }
-
-    try {
-      await apiRequest(`/api/documents/${document.id}`, {
-        method: "DELETE",
-        token
-      });
-      setDocuments((current) => current.filter((item) => item.id !== document.id));
-      setNotice({ type: "success", text: "Document deleted." });
-      await refreshWorkers();
-    } catch (error) {
-      handleError(error);
-    }
-  }
-
   return (
     <div className="min-h-screen bg-neutral-100 text-zinc-900">
       <header className="border-b border-zinc-200 bg-white">
@@ -480,11 +373,10 @@ function Dashboard({ token, user, setUser, onLogout }) {
       <main className="mx-auto grid max-w-7xl gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_440px]">
         <section className="min-w-0">
           <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Stat label="Files" value={stats.total} />
               <Stat label="Submitted" value={stats.submitted} />
               <Stat label="Pending" value={stats.pending} />
-              <Stat label="Documents" value={stats.documentsCount} />
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <label className="relative block min-w-0 sm:w-72">
@@ -516,10 +408,10 @@ function Dashboard({ token, user, setUser, onLogout }) {
           <form onSubmit={saveWorker} className="border-b border-zinc-200 p-4">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-medium uppercase text-zinc-500">File no    <h2 className="text-xl font-semibold text-zinc-950">
+                <p className="text-xs font-medium uppercase text-zinc-500">File no</p>
+                <h2 className="text-xl font-semibold text-zinc-950">
                   {isNew ? "2000" : activeWorker?.file_no}
-                </h2></p> 
-              
+                </h2>
               </div>
               {loadingDetail ? (
                 <LoaderCircle className="mt-1 h-5 w-5 animate-spin text-teal-700" aria-hidden="true" />
@@ -638,48 +530,6 @@ function Dashboard({ token, user, setUser, onLogout }) {
             </div>
           </form>
 
-          <section className="p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium uppercase text-zinc-500">Documents</p>
-                <h3 className="text-base font-semibold text-zinc-950">{documents.length} uploaded</h3>
-              </div>
-              <input
-                ref={fileInputRef}
-                className="sr-only"
-                type="file"
-                multiple
-                onChange={(event) => setSelectedFiles(Array.from(event.target.files || []))}
-                disabled={isNew}
-              />
-              <button
-                className="text-button"
-                type="button"
-                disabled={isNew}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Paperclip className="h-4 w-4" aria-hidden="true" />
-                Select
-              </button>
-            </div>
-
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-neutral-50 px-3 py-2">
-              <span className="min-w-0 truncate text-sm text-zinc-600">
-                {selectedFiles.length ? `${selectedFiles.length} selected` : "No files selected"}
-              </span>
-              <button
-                className="primary-button shrink-0"
-                type="button"
-                disabled={isNew || uploading || !selectedFiles.length}
-                onClick={uploadDocuments}
-              >
-                {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
-                Upload
-              </button>
-            </div>
-
-            <DocumentList documents={documents} onDownload={downloadDocument} onDelete={deleteDocument} />
-          </section>
         </aside>
       </main>
     </div>
@@ -740,7 +590,6 @@ function WorkerList({ workers, activeWorker, loading, onOpen }) {
               <th className="px-4 py-3">Submitted</th>
               <th className="px-4 py-3">Decision</th>
               <th className="px-4 py-3">LMIA</th>
-              <th className="px-4 py-3 text-right">Docs</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -770,7 +619,6 @@ function WorkerList({ workers, activeWorker, loading, onOpen }) {
                   </span>
                 </td>
                 <td className="max-w-36 truncate px-4 py-3 text-zinc-700">{worker.lmia_number || "-"}</td>
-                <td className="px-4 py-3 text-right font-medium text-zinc-700">{worker.document_count}</td>
               </tr>
             ))}
           </tbody>
@@ -802,62 +650,10 @@ function WorkerList({ workers, activeWorker, loading, onOpen }) {
               <p className="truncate">Company: {worker.company || "-"}</p>
               <p className="truncate">LMIA: {worker.lmia_number || "-"}</p>
               <p className="truncate">Decision: {worker.decision || "Pending"}</p>
-              <p className="truncate">Docs: {worker.document_count}</p>
             </div>
           </button>
         ))}
       </div>
     </>
-  );
-}
-
-function DocumentList({ documents, onDownload, onDelete }) {
-  if (!documents.length) {
-    return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-center">
-        <Paperclip className="mx-auto h-7 w-7 text-zinc-400" aria-hidden="true" />
-        <p className="mt-2 text-sm font-medium text-zinc-900">No documents uploaded.</p>
-      </div>
-    );
-  }
-
-  return (
-    <ul className="space-y-2">
-      {documents.map((document) => (
-        <li key={document.id} className="rounded-lg border border-zinc-200 bg-white p-3">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-700">
-              <FileText className="h-4 w-4" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-zinc-900">{document.original_name}</p>
-              <p className="text-xs text-zinc-500">
-                {formatBytes(document.size)} · {formatDate(document.uploaded_at?.slice(0, 10))}
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <button
-                className="icon-button"
-                type="button"
-                title="Download document"
-                aria-label={`Download ${document.original_name}`}
-                onClick={() => onDownload(document)}
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <button
-                className="icon-button border-red-200 text-red-700 hover:bg-red-50"
-                type="button"
-                title="Delete document"
-                aria-label={`Delete ${document.original_name}`}
-                onClick={() => onDelete(document)}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }

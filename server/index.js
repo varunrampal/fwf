@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +6,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import jwt from "jsonwebtoken";
-import multer from "multer";
 import { createClient } from "@libsql/client";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,12 +20,9 @@ dotenv.config({ path: path.join(rootDir, ".env.local"), override: true });
 const port = Number(process.env.PORT || 3000);
 const jwtSecret = process.env.JWT_SECRET || "dev-only-change-this-secret";
 const databaseUrl = process.env.TURSO_DATABASE_URL || `file:${localDatabasePath}`;
-const uploadDir = path.resolve(rootDir, process.env.UPLOAD_DIR || "server/uploads");
-const maxUploadMb = Number(process.env.MAX_UPLOAD_MB || 20);
 const devMode = process.argv.includes("--dev");
 
 await fs.mkdir(path.dirname(localDatabasePath), { recursive: true });
-await fs.mkdir(uploadDir, { recursive: true });
 
 const db = createClient({
   url: databaseUrl,
@@ -63,16 +58,6 @@ async function initializeDatabase() {
       note TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`,
-    `CREATE TABLE IF NOT EXISTS documents (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      worker_id INTEGER NOT NULL,
-      original_name TEXT NOT NULL,
-      stored_name TEXT NOT NULL,
-      mime_type TEXT,
-      size INTEGER NOT NULL,
-      uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
     )`
   ];
 
@@ -144,20 +129,8 @@ function toWorker(row) {
     decision: row.decision || "",
     lmia_number: row.lmia_number || "",
     note: row.note || "",
-    document_count: Number(row.document_count || 0),
     created_at: row.created_at,
     updated_at: row.updated_at
-  };
-}
-
-function toDocument(row) {
-  return {
-    id: Number(row.id),
-    worker_id: Number(row.worker_id),
-    original_name: row.original_name,
-    mime_type: row.mime_type || "application/octet-stream",
-    size: Number(row.size || 0),
-    uploaded_at: row.uploaded_at
   };
 }
 
@@ -221,32 +194,6 @@ async function requireAuth(req, res, next) {
     return next();
   } catch {
     return res.status(401).json({ error: "Authentication required." });
-  }
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, callback) => callback(null, uploadDir),
-  filename: (_req, file, callback) => {
-    const extension = path.extname(file.originalname);
-    callback(null, `${Date.now()}-${crypto.randomUUID()}${extension}`);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: maxUploadMb * 1024 * 1024,
-    files: 10
-  }
-});
-
-async function unlinkStoredFile(storedName) {
-  try {
-    await fs.unlink(path.join(uploadDir, path.basename(storedName)));
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.warn(`Could not delete uploaded file ${storedName}: ${error.message}`);
-    }
   }
 }
 
@@ -331,11 +278,9 @@ app.get("/api/workers", requireAuth, async (req, res, next) => {
     }
 
     const result = await execute(
-      `SELECT w.*, COUNT(d.id) AS document_count
+      `SELECT w.*
        FROM workers w
-       LEFT JOIN documents d ON d.worker_id = w.id
        ${where}
-       GROUP BY w.id
        ORDER BY w.file_no DESC`,
       args
     );
@@ -374,7 +319,7 @@ app.post("/api/workers", requireAuth, async (req, res, next) => {
     );
 
     const worker = await execute(
-      `SELECT w.*, 0 AS document_count
+      `SELECT w.*
        FROM workers w
        WHERE w.id = :id`,
       { id: Number(result.lastInsertRowid) }
@@ -393,11 +338,9 @@ app.get("/api/workers/:id", requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const workerResult = await execute(
-      `SELECT w.*, COUNT(d.id) AS document_count
+      `SELECT w.*
        FROM workers w
-       LEFT JOIN documents d ON d.worker_id = w.id
-       WHERE w.id = :id
-       GROUP BY w.id`,
+       WHERE w.id = :id`,
       { id }
     );
 
@@ -405,14 +348,8 @@ app.get("/api/workers/:id", requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: "Worker record not found." });
     }
 
-    const documentResult = await execute(
-      "SELECT * FROM documents WHERE worker_id = :id ORDER BY uploaded_at DESC",
-      { id }
-    );
-
     res.json({
-      worker: toWorker(workerResult.rows[0]),
-      documents: documentResult.rows.map(toDocument)
+      worker: toWorker(workerResult.rows[0])
     });
   } catch (error) {
     next(error);
@@ -457,11 +394,9 @@ app.put("/api/workers/:id", requireAuth, async (req, res, next) => {
     );
 
     const updated = await execute(
-      `SELECT w.*, COUNT(d.id) AS document_count
+      `SELECT w.*
        FROM workers w
-       LEFT JOIN documents d ON d.worker_id = w.id
-       WHERE w.id = :id
-       GROUP BY w.id`,
+       WHERE w.id = :id`,
       { id }
     );
 
@@ -474,87 +409,12 @@ app.put("/api/workers/:id", requireAuth, async (req, res, next) => {
 app.delete("/api/workers/:id", requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const documents = await execute("SELECT stored_name FROM documents WHERE worker_id = :id", { id });
     const deleted = await execute("DELETE FROM workers WHERE id = :id", { id });
 
     if (!deleted.rowsAffected) {
       return res.status(404).json({ error: "Worker record not found." });
     }
 
-    await Promise.all(documents.rows.map((document) => unlinkStoredFile(document.stored_name)));
-    res.status(204).send();
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post("/api/workers/:id/documents", requireAuth, upload.array("documents", 10), async (req, res, next) => {
-  try {
-    const workerId = Number(req.params.id);
-    const worker = await execute("SELECT id FROM workers WHERE id = :workerId LIMIT 1", { workerId });
-
-    if (!worker.rows.length) {
-      await Promise.all((req.files || []).map((file) => unlinkStoredFile(file.filename)));
-      return res.status(404).json({ error: "Worker record not found." });
-    }
-
-    const files = req.files || [];
-    if (!files.length) {
-      return res.status(400).json({ error: "Select at least one document to upload." });
-    }
-
-    for (const file of files) {
-      await execute(
-        `INSERT INTO documents (worker_id, original_name, stored_name, mime_type, size)
-         VALUES (:workerId, :originalName, :storedName, :mimeType, :size)`,
-        {
-          workerId,
-          originalName: file.originalname,
-          storedName: file.filename,
-          mimeType: file.mimetype,
-          size: file.size
-        }
-      );
-    }
-
-    const documentResult = await execute(
-      "SELECT * FROM documents WHERE worker_id = :workerId ORDER BY uploaded_at DESC",
-      { workerId }
-    );
-
-    res.status(201).json({ documents: documentResult.rows.map(toDocument) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get("/api/documents/:id/download", requireAuth, async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    const result = await execute("SELECT * FROM documents WHERE id = :id LIMIT 1", { id });
-
-    if (!result.rows.length) {
-      return res.status(404).json({ error: "Document not found." });
-    }
-
-    const document = result.rows[0];
-    res.download(path.join(uploadDir, path.basename(document.stored_name)), document.original_name);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.delete("/api/documents/:id", requireAuth, async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    const result = await execute("SELECT stored_name FROM documents WHERE id = :id LIMIT 1", { id });
-
-    if (!result.rows.length) {
-      return res.status(404).json({ error: "Document not found." });
-    }
-
-    await execute("DELETE FROM documents WHERE id = :id", { id });
-    await unlinkStoredFile(result.rows[0].stored_name);
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -599,10 +459,6 @@ async function configureFrontend() {
 
 app.use((error, _req, res, _next) => {
   console.error(error);
-
-  if (error instanceof multer.MulterError) {
-    return res.status(400).json({ error: error.message });
-  }
 
   res.status(500).json({ error: "Something went wrong." });
 });

@@ -1,6 +1,6 @@
 # Foreign Worker Files
 
-A progressive web app for maintaining foreign worker records, document uploads, login-protected access, and Turso-backed storage.
+A progressive web app for maintaining foreign worker records with login-protected access and Turso-backed storage.
 
 ## Stack
 
@@ -43,5 +43,3 @@ Build the frontend and serve it through Express:
 npm run build
 npm start
 ```
-
-Uploaded documents are stored in `server/uploads` by default. Set `UPLOAD_DIR` to move document storage outside the repo in production.
