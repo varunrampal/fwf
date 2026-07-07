@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+*.local
+local.db
+local.db-*
+server/data/
+server/uploads/
+dev.log
+dev.err
+npm-debug.log*
