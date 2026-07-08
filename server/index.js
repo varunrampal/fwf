@@ -32,6 +32,24 @@ const uploadDir = path.isAbsolute(configuredUploadDir)
   ? configuredUploadDir
   : path.resolve(rootDir, configuredUploadDir);
 
+console.log("Starting Foreign Worker Files API", {
+  nodeEnv: process.env.NODE_ENV || "development",
+  nodeVersion: process.version,
+  port,
+  rootDir,
+  uploadDir,
+  hasTursoUrl: Boolean(process.env.TURSO_DATABASE_URL),
+  hasTursoToken: Boolean(process.env.TURSO_AUTH_TOKEN)
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled rejection:", error);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+});
+
 await fs.mkdir(path.dirname(localDatabasePath), { recursive: true });
 await fs.mkdir(ocrCacheDir, { recursive: true });
 await fs.mkdir(uploadDir, { recursive: true });
@@ -964,7 +982,11 @@ app.use(
 );
 app.use(express.json({ limit: "1mb" }));
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", (req, res) => {
+  console.log("Health check", {
+    host: req.get("host"),
+    time: new Date().toISOString()
+  });
   res.json({ ok: true });
 });
 
