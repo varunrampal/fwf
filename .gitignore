@@ -5,6 +5,7 @@ dist/
 local.db
 local.db-*
 server/data/
+server/ocr-cache/
 server/uploads/
 dev.log
 dev.err

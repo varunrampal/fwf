@@ -10,6 +10,7 @@ A progressive web app for maintaining foreign worker records with login-protecte
 - Backend: Node.js + Express
 - Database: Turso via `@libsql/client`
 - Auth: Email/password login with JWT
+- Extraction: Local OCR and text parsing for passport and LMIA review flows
 
 ## Setup
 
@@ -24,6 +25,8 @@ A progressive web app for maintaining foreign worker records with login-protecte
    For local development without Turso, leave `TURSO_DATABASE_URL` empty or remove it. The server will use `server/data/local.db`.
 
    The backend loads `.env` first, then `.env.local`, so local values can override shared defaults.
+
+   Uploaded passport and LMIA files are processed with local OCR for extraction. After you review and confirm an import, the app saves the passport file and the LMIA file in `UPLOAD_DIR` with metadata in Turso. If an LMIA document with the same LMIA number is already saved, the app reuses the existing LMIA file instead of storing another copy.
 
 3. Start the app:
 
