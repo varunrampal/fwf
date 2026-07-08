@@ -20,6 +20,7 @@ dotenv.config({ path: path.join(rootDir, ".env") });
 dotenv.config({ path: path.join(rootDir, ".env.local"), override: true });
 
 const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || "0.0.0.0";
 const jwtSecret = process.env.JWT_SECRET || "dev-only-change-this-secret";
 const databaseUrl = process.env.TURSO_DATABASE_URL || `file:${localDatabasePath}`;
 const devMode = process.argv.includes("--dev");
@@ -34,6 +35,7 @@ console.log("Starting Foreign Worker Files API", {
   nodeEnv: process.env.NODE_ENV || "development",
   nodeVersion: process.version,
   port,
+  host,
   rootDir,
   uploadDir,
   hasTursoUrl: Boolean(process.env.TURSO_DATABASE_URL),
@@ -1434,8 +1436,8 @@ async function main() {
   await initializeDatabase();
   await configureFrontend();
 
-  app.listen(port, () => {
-    console.log(`API listening on http://127.0.0.1:${port}`);
+  app.listen(port, host, () => {
+    console.log(`API listening on http://${host}:${port}`);
     if (devMode) {
       console.log(`App available at http://127.0.0.1:${port}`);
     }
