@@ -8,8 +8,6 @@ import dotenv from "dotenv";
 import express from "express";
 import jwt from "jsonwebtoken";
 import multer from "multer";
-import { PDFParse } from "pdf-parse";
-import { createWorker } from "tesseract.js";
 import { createClient } from "@libsql/client";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,6 +67,8 @@ const importUpload = multer({
 
 let ocrWorkerPromise;
 let ocrQueue = Promise.resolve();
+let pdfParseModulePromise;
+let tesseractModulePromise;
 
 async function execute(sql, args = {}) {
   return db.execute({ sql, args });
@@ -811,6 +811,7 @@ function parseLmiaText(text) {
 
 async function getOcrWorker() {
   if (!ocrWorkerPromise) {
+    const { createWorker } = await getTesseractModule();
     ocrWorkerPromise = createWorker("eng", 1, {
       cachePath: ocrCacheDir,
       logger: () => {}
@@ -832,7 +833,24 @@ async function recognizeImage(buffer) {
   return task;
 }
 
+async function getPdfParseModule() {
+  if (!pdfParseModulePromise) {
+    pdfParseModulePromise = import("pdf-parse");
+  }
+
+  return pdfParseModulePromise;
+}
+
+async function getTesseractModule() {
+  if (!tesseractModulePromise) {
+    tesseractModulePromise = import("tesseract.js");
+  }
+
+  return tesseractModulePromise;
+}
+
 async function extractTextFromPdf(buffer) {
+  const { PDFParse } = await getPdfParseModule();
   const parser = new PDFParse({ data: buffer });
   try {
     const result = await parser.getText();
@@ -858,6 +876,7 @@ function hasUsefulPdfText(text, label) {
 }
 
 async function extractPdfOcrText(buffer, firstPages = 2) {
+  const { PDFParse } = await getPdfParseModule();
   const parser = new PDFParse({ data: buffer });
   try {
     const result = await parser.getScreenshot({
@@ -1411,15 +1430,22 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: "Something went wrong." });
 });
 
-await initializeDatabase();
-await configureFrontend();
+async function main() {
+  await initializeDatabase();
+  await configureFrontend();
 
-app.listen(port, () => {
-  console.log(`API listening on http://127.0.0.1:${port}`);
-  if (devMode) {
-    console.log(`App available at http://127.0.0.1:${port}`);
-  }
-  if (!process.env.TURSO_DATABASE_URL) {
-    console.log(`Using local database file: ${localDatabasePath}`);
-  }
+  app.listen(port, () => {
+    console.log(`API listening on http://127.0.0.1:${port}`);
+    if (devMode) {
+      console.log(`App available at http://127.0.0.1:${port}`);
+    }
+    if (!process.env.TURSO_DATABASE_URL) {
+      console.log(`Using local database file: ${localDatabasePath}`);
+    }
+  });
+}
+
+main().catch((error) => {
+  console.error("Startup failed:", error);
+  process.exit(1);
 });
